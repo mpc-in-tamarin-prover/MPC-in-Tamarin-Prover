@@ -12,6 +12,7 @@ paper text.
 
 ```bash
 grep -rn "Use_A" --include=*.spthy .                 # F1
+grep -rn "Corruption_Party\|Input_Party" --include=*.spthy . | grep -v "\[" # F3b
 grep -n "Dep()\|Ind()" complexity_measures/4_party/*.spthy   # F2
 grep -n -A2 "rule Eval_m:" complexity_measures/4_party/MPC.spthy  # F3
 grep -n -A6 "rule Independence_of_inputs_3" complexity_measures/3_party/MPC.spthy  # F4
@@ -19,6 +20,20 @@ grep -n -A8 "rule RCV:" complexity_measures/2_party/MPC.spthy      # F5
 grep -n "T_init(" */MPC.spthy complexity_measures/*/MPC.spthy | grep restriction -A2  # F6
 python3 scripts/lemma_index.py && cat docs/LEMMA_INDEX.md          # F9
 ```
+
+## Checked and found sound (so the list above is not read as "everything is broken")
+
+* `_restrict(P << G)` in `Honest_MPC_input` is satisfiable: `Input_reachability`
+  (`H_in` reachable) is verified in all three complexity runs
+  (`results.txt:7,82,175`), so the honest-input rule does fire. A reviewer
+  suspicion that this rule was dead is **refuted by the recorded runs**.
+* `sources` is a legitimate source lemma and should stay, even though it is not a
+  privacy theorem.
+* The 2-party and 3-party models use consistent action names (`Ind()`, `Use_P`,
+  `P_Corrupted`); the slips in F1/F2/F3b are local, not a house style.
+* `Sanity_checks.spthy` is the right idea (reachability witnesses exist for most
+  branches); what is missing is a *joint* multi-party witness, not the concept.
+
 
 ## P0 — lemmas that cannot be false (vacuity)
 
@@ -61,6 +76,15 @@ is unreachable without corruption". Two cheap additions close most of the gap:
 2. a non-vacuity lemma — an all-honest, same-session run exists where both parties
    submit exactly one input and use the ideal result.
 
+**F3b. Two restrictions guard actions that no rule emits.** `only_one_corruption_per_party`
+uses `Corruption_Party(X1)` (`complexity_measures/2_party/MPC.spthy:232`,
+`3_party/…:278`, `4_party/…:313`) and `one_input_per_party` uses `Input_Party(X)`
+(`3_party/…:281`, `4_party/…:316`); the rules emit `P_Corrupted` and `Inx`
+instead. Both restrictions are therefore vacuous in every model — the "one input
+per party" and "one corruption per party" guarantees are not enforced at all.
+Either emit the actions from the rules or delete the restrictions; leaving them
+in gives a false sense of enforcement.
+
 ## P1 — modelling bugs that affect the scaling claim
 
 **F4. The 4-party corruption threshold ignores the fourth party.**
@@ -68,6 +92,15 @@ is unreachable without corruption". Two cheap additions close most of the gap:
 `_restrict(mal + mal << hmA + hmB + hmC)` — `hmD` is missing from the sum while
 `HM(hmA, hmB, hmC, hmD)` and the argument tuple carry it. The honest/malicious
 partition is therefore wrong exactly in the model used for the largest timing.
+Two consequences worth stating explicitly in the paper:
+
+* the enforced threshold is **two** corrupted parties in the 4-party model, not
+  `n-1 = 3` as `README.md` claims ("we always assume that the adversary has to
+  corrupt n-1 parties"); the 3-party model is consistent with `n-1`, the 4-party
+  one is not, so the "same experiment at n=2,3,4" framing does not hold;
+* with the `hmD` term missing, the "honest majority" configuration (D the only
+  corrupted party) cannot reach `Eval_m` at all.
+
 
 **F5. `Independence_of_inputs_3` puts the third tag in the second party's slot.**
 `complexity_measures/3_party/MPC.spthy:164` matches `<B, dataB, hmA>`; every other
@@ -122,3 +155,7 @@ Deliberately **not** changed: any `.spthy` model or lemma. Every fix in P0/P1
 changes either the model's semantics or the set of provable lemmas, so it must be
 applied by the author with Tamarin at hand and the proofs re-run. The snippets
 above are proposals, not patches.
+
+This pass was made without a Tamarin binary (the reviewer's sandbox has none), so
+every statement above is either a reading of the source or a quotation from the
+recorded runs in `results.txt` — none of it is a fresh verification result.

@@ -144,6 +144,38 @@ and Maude versions. For a claim of the form "cost grows by roughly an order of
 magnitude per added party", record at least 5 runs per model and report median +
 spread, plus `tamarin-prover --version` and `maude --version`.
 
+**F12. A quantifier in the fairness sanity lemma is malformed.**
+`fairness/Sanity_checks.spthy:59` reads `==> not Ex #j Use_P(P)@j` — the dot after
+`#j` is missing, and `P` is not bound in that lemma. Either it fails to parse or
+`P` is treated as a free term; both make the lemma say something other than
+"some party never uses a result". Compare with the same lemma in `GOD/`.
+
+**F13. Positional typos inside lemmas make them test a different party.**
+`complexity_measures/4_party/violation_lemmas.spthy:114` binds `Inx(D,G,dataB)`
+while the lemma is about `dataD` (the `Use_r` on the next line uses `dataD`);
+`complexity_measures/2_party/violation_lemmas.spthy:72` writes
+`P_Corrupted(inA)` where `inA` is data, not a party. In both cases the lemma still
+verifies, because it now constrains a different term than the prose claims.
+
+**F14. Cost is not assurance — the most expensive lemma in the 4-party run is the
+vacuous one.** `output_delivery_a_party_without_output` takes 15 / 170 / 1060 steps
+in the 2- / 3- / 4-party runs (`results.txt:33,119,208`), i.e. it dominates the
+scaling curve, and it is exactly the lemma that cannot fail (F1). Any table that
+presents "steps" or "time" as a proxy for strength must exclude or fix it first.
+
+## Checked and refuted (claims that did not survive the source)
+
+* The 4-party output rules **do** bind the trusted party: `!TP(TP, G)` in
+  `complexity_measures/4_party/MPC.spthy:218,236`. A claim that they accept
+  injected messages as outputs is not supported by the rules.
+* There is **no drift** between lemma names in `results.txt` and the sources — the
+  generator reports "None" in `docs/LEMMA_INDEX.md`. The stale artifact is the
+  separate file `complexity_measures/3_party/results.txt` (F9), not the names.
+* `Eavesdrop` being guarded by `!Corrupted(receiver)` is defensible as a
+  secure-channel model; what it does mean (F3) is that the privacy `*_hold`
+  lemmas rest on that assumption rather than on protocol logic.
+
+
 ## What this PR changes (and does not)
 
 Changed: `tests.py` (F10), `scripts/lemma_index.py` + `docs/LEMMA_INDEX.md`

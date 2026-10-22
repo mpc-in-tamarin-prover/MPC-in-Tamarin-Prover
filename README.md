@@ -31,3 +31,55 @@ __argument list:__
 6. GOD - run setup model with guaranteed output delivery
 7. Fairness - run setup model with fairness
 8. Abort - run setup model with security with abort
+
+`tests.py` exits non-zero when Tamarin reports a falsified lemma or the run
+fails, so it can be used as a CI gate:
+
+```bash
+python3 tests.py            # every model
+python3 tests.py AllC       # only the complexity models
+```
+
+### Repository layout
+
+```
+GOD/                  guaranteed output delivery (malicious adversary)
+fairness/             fairness variant of the output delivery attribute
+sec_with_abort/       security with abort
+semi_honest/          semi-honest adversary (privacy only)
+complexity_measures/  the same experiment for 2, 3 and 4 parties
+scripts/              tooling (lemma index generator)
+docs/                 generated lemma index and the review findings
+results.txt           recorded `tamarin-prover --prove` runs (2/3/4 parties)
+tests.py              benchmark runner
+```
+
+Each model directory holds `MPC.spthy` (rules), `Sanity_checks.spthy`
+(executability/reachability witnesses) and `violation_lemmas.spthy`
+(the properties), plus a `tactics` file included by the main theory.
+
+### Reproducing the numbers
+
+```bash
+tamarin-prover --version && maude --version      # record both in the paper
+python3 scripts/lemma_index.py                   # refresh docs/LEMMA_INDEX.md
+python3 tests.py C2                              # 2 parties
+python3 tests.py C3                              # 3 parties
+python3 tests.py C4                              # 4 parties
+```
+
+Numbers currently recorded in `results.txt` (processing time as printed by
+Tamarin): 2 parties 16.82 s, 3 parties 628.78 s, 4 parties 1477.73 s. Two of
+those runs also print `WARNING: 1 wellformedness check failed!` — see
+`docs/FINDINGS.md`, item F8, before quoting them in a paper.
+
+### Artifact notes for a submission
+
+* Pin the tool versions: `tamarin-prover --version`, `maude --version`, CPU model
+  and core count. Tamarin's search is sensitive to both.
+* Record at least 5 runs per model and report the median; the README already says
+  the timings are order-of-magnitude, and a single run cannot support even that
+  claim (see `docs/FINDINGS.md`, F11).
+* `docs/LEMMA_INDEX.md` is generated from the sources, so the counts quoted in
+  the paper (lemmas per model, `all-traces` vs `exists-trace`) can be re-derived
+  with one command instead of being transcribed by hand.

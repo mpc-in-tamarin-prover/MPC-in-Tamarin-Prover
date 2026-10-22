@@ -1,93 +1,96 @@
-import subprocess
+#!/usr/bin/env python3
+"""Run the Tamarin models and report timing, memory and verdicts.
+
+Changes against the first version:
+  * models are addressed by name in a dict, so `semi-honest` can no longer
+    silently run the GOD model (the old list index 4 was GOD, not semi_honest);
+  * the process exit code is non-zero when a model fails to verify or Tamarin
+    reports a falsified lemma, so the script is usable in CI;
+  * every run prints the model path it actually executed.
+
+Usage:
+  python3 tests.py                # run every model
+  python3 tests.py GOD            # one model (see MODELS below)
+  python3 tests.py AllC           # the three complexity models only
+
+Requires: tamarin-prover on PATH, GNU /usr/bin/time (Linux).
+"""
 import re
+import shutil
+import subprocess
 import sys
 
+MODELS = {
+    "C2": "./complexity_measures/2_party/MPC.spthy",
+    "C3": "./complexity_measures/3_party/MPC.spthy",
+    "C4": "./complexity_measures/4_party/MPC.spthy",
+    "semi-honest": "./semi_honest/MPC.spthy",
+    "GOD": "./GOD/MPC.spthy",
+    "Fairness": "./fairness/MPC.spthy",
+    "Abort": "./sec_with_abort/MPC.spthy",
+}
+GROUPS = {"AllC": ["C2", "C3", "C4"]}
 
-def run_test(model):
-    command = [
-        "tamarin-prover",
-        model,
-        "--prove"
-    ]
+VERDICT_RE = re.compile(r"^\s{2}([A-Za-z0-9_]+)\s+\((?:all-traces|exists-trace)\):\s+(verified|falsified)")
 
-    result = subprocess.run(
-        ["/usr/bin/time", "-v"] + command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
 
-    stdout_lines = result.stdout.splitlines()
+def run_test(name):
+    """Run one model. Returns True on success (no falsified lemma, exit code 0)."""
+    model = MODELS[name]
+    if shutil.which("tamarin-prover") is None:
+        print("tamarin-prover not found on PATH", file=sys.stderr)
+        return False
+    time_bin = shutil.which("/usr/bin/time") or shutil.which("time")
+    command = ["tamarin-prover", model, "--prove"]
+    wrapper = [time_bin, "-v"] if time_bin and time_bin.endswith("/time") else []
+    result = subprocess.run(wrapper + command, capture_output=True, text=True)
 
-    start_index = None
-    for i, line in enumerate(stdout_lines):
-        if "processing time:" in line:
-            start_index = i
-            break
-
-    if start_index is not None:
-        for line in stdout_lines[start_index:]:
-            print(line)
-    else:
-        print("'processing time:' not found.")
+    print(f"### {name}: {model}")
+    lines = result.stdout.splitlines()
+    start = next((i for i, line in enumerate(lines) if "processing time:" in line), None)
+    if start is None:
+        print("'processing time:' not found — raw output below")
         print(result.stdout)
+    else:
+        for line in lines[start:]:
+            print(line)
+
+    falsified = [m.group(1) for line in lines for m in [VERDICT_RE.match(line)] if m and m.group(2) == "falsified"]
+    if falsified:
+        print("FALSIFIED LEMMAS: " + ", ".join(falsified))
 
     print("=" * 80)
     print("TIME / RESOURCE USAGE REPORT")
     print("=" * 80)
-
-    match = re.search(
-        r"(Command being timed:.*?Exit status:.*)",
-        result.stderr,
-        re.DOTALL,
-    )
-
-    if match:
-        print(match.group(1))
-    else:
-        print("Nie znaleziono raportu /usr/bin/time.")
-
-    print("=" * 80)
-    print("TAMARIN RESULT")
-    print("=" * 80)
-
+    match = re.search(r"(Command being timed:.*?Exit status:.*)", result.stderr, re.DOTALL)
+    print(match.group(1) if match else "no /usr/bin/time report")
     print("=" * 80)
     print(f"EXIT CODE: {result.returncode}")
     print("=" * 80)
-
-models = [
-    "./complexity_measures/2_party/MPC.spthy",
-    "./complexity_measures/3_party/MPC.spthy",
-    "./complexity_measures/4_party/MPC.spthy",
-    "./semi_honest/MPC.spthy",
-    "./GOD/MPC.spthy",
-    "./fairness/MPC.spthy",
-    "./sec_with_abort/MPC.spthy",
-    ]
+    return result.returncode == 0 and not falsified
 
 
-if len(sys.argv) == 1:
-    for model in models:
-        run_test(model)
-else:
-    option = sys.argv[1]
-    if   option == "C2":
-        run_test(models[0])
-    elif option == "C3":
-        run_test(models[1])
-    elif option == "C4":
-        run_test(models[2])
-    elif option == "AllC":
-        for model in models[0:3]:
-            run_test(model)
-    elif option == "semi-honest":
-        run_test(models[4])     
-    elif option == "GOD":
-        run_test(models[4])
-    elif option == "Fairness":
-        run_test(models[5])
-    elif option == "Abort":
-        run_test(models[6])
-
+def main(argv):
+    if len(argv) == 1:
+        targets = list(MODELS)
     else:
-        print("wrong argument, no model found")
+        targets = []
+        for arg in argv[1:]:
+            if arg in GROUPS:
+                targets.extend(GROUPS[arg])
+            elif arg in MODELS:
+                targets.append(arg)
+            else:
+                print(f"unknown model: {arg}\nknown: {', '.join(MODELS)}; groups: {', '.join(GROUPS)}", file=sys.stderr)
+                return 2
+
+    failed = [name for name in targets if not run_test(name)]
+    if failed:
+        print("FAILED: " + ", ".join(failed), file=sys.stderr)
+        return 1
+    print(f"all {len(targets)} model(s) verified")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
